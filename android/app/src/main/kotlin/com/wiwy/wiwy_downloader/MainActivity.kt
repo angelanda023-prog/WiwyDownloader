@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Log
 import androidx.annotation.NonNull
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
@@ -183,15 +184,19 @@ class MainActivity : FlutterActivity() {
 
                 // Exportar los archivos producidos a Descargas/WiwyDownloader.
                 val produced = staging.listFiles()?.filter { it.isFile } ?: emptyList()
+                Log.d("WiwyDL", "descarga OK; archivos en staging: ${produced.size} -> ${produced.map { it.name }}")
                 for (f in produced) {
+                    Log.d("WiwyDL", "exportando ${f.name} (${f.length()} bytes)")
                     exportToPublicDownloads(f)
                 }
                 staging.deleteRecursively()
+                Log.d("WiwyDL", "exportación completa a Descargas/$publicSubDir")
 
                 withContext(Dispatchers.Main) {
                     result.success("Descargas/$publicSubDir")
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                Log.e("WiwyDL", "DOWNLOAD_FAILED", e)
                 withContext(Dispatchers.Main) {
                     result.error("DOWNLOAD_FAILED", e.message, null)
                 }
@@ -235,6 +240,7 @@ class MainActivity : FlutterActivity() {
             values.clear()
             values.put(MediaStore.Downloads.IS_PENDING, 0)
             resolver.update(uri, values, null, null)
+            Log.d("WiwyDL", "MediaStore export OK: $uri")
         } else {
             val dir = File(
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
