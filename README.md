@@ -33,6 +33,18 @@ Kotlin (MainActivity)  →  youtubedl-android (yt-dlp/ffmpeg nativos)
 - Lógica Flutter: [`lib/main.dart`](lib/main.dart), [`lib/ytdlp_service.dart`](lib/ytdlp_service.dart)
 - Puente nativo: [`android/app/src/main/kotlin/com/wiwy/wiwy_downloader/MainActivity.kt`](android/app/src/main/kotlin/com/wiwy/wiwy_downloader/MainActivity.kt)
 
+## Instalar en tu teléfono
+
+Descarga el APK desde la [última Release](https://github.com/angelanda023-prog/WiwyDownloader/releases/latest):
+casi todos los móviles usan **arm64-v8a**. Una vez instalada, la app se actualiza sola
+(te avisa cuando hay versión nueva).
+
+## Actualizaciones OTA
+
+- La app lee [`update.json`](update.json) del repo y compara el `versionCode`.
+- Para publicar una versión nueva: sube el `version:` en `pubspec.yaml` y ejecuta
+  `./scripts/publicar_version.sh 1.0.1 "qué cambió"`.
+
 ## Cómo ejecutar
 
 ```bash
