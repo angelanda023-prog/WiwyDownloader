@@ -326,7 +326,7 @@ class _MainScaffoldState extends State<MainScaffold> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  Text('${(v * 100).toStringAsFixed(0)}%',
+                  Text(v > 0 ? '${(v * 100).toStringAsFixed(0)}%' : 'Preparando…',
                       style: const TextStyle(color: AppColors.textSecondary)),
                 ],
               ),

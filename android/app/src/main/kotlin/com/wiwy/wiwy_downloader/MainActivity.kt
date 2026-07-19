@@ -41,6 +41,7 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "init" -> initEngine(result)
+                    "update" -> updateEngine(result)
                     "getInfo" -> getInfo(call.argument<String>("url"), result)
                     "download" -> download(
                         call.argument<String>("url"),
@@ -59,10 +60,31 @@ class MainActivity : FlutterActivity() {
             try {
                 YoutubeDL.getInstance().init(applicationContext)
                 FFmpeg.getInstance().init(applicationContext)
+                // yt-dlp empaquetado suele estar viejo y YouTube lo rompe (nsig).
+                // Lo actualizamos a la última versión (mejor esfuerzo, requiere red).
+                try {
+                    YoutubeDL.getInstance().updateYoutubeDL(applicationContext)
+                } catch (_: Throwable) {
+                    // Sin conexión o ya está al día: seguimos con el que hay.
+                }
                 withContext(Dispatchers.Main) { result.success(true) }
-            } catch (e: YoutubeDLException) {
+            } catch (e: Throwable) {
                 withContext(Dispatchers.Main) {
                     result.error("INIT_FAILED", e.message, null)
+                }
+            }
+        }
+    }
+
+    /** Fuerza la actualización de yt-dlp a la última versión. */
+    private fun updateEngine(result: MethodChannel.Result) {
+        scope.launch {
+            try {
+                val status = YoutubeDL.getInstance().updateYoutubeDL(applicationContext)
+                withContext(Dispatchers.Main) { result.success(status?.toString() ?: "DONE") }
+            } catch (e: Throwable) {
+                withContext(Dispatchers.Main) {
+                    result.error("UPDATE_FAILED", e.message, null)
                 }
             }
         }
