@@ -18,7 +18,6 @@ class SiteIconsRow extends StatelessWidget {
       _Site('Twitter', const Color(0xFF1DA1F2), letter: '𝕏'),
       _Site('Vimeo', const Color(0xFF1AB7EA), letter: 'V'),
       _Site('SoundCloud', const Color(0xFFFF5500), icon: Icons.cloud),
-      _Site('Más', const Color(0xFF374151), icon: Icons.more_horiz),
     ];
 
     return Row(

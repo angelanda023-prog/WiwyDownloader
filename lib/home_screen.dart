@@ -501,32 +501,36 @@ class _MainScaffoldState extends State<MainScaffold> {
         const SizedBox(height: 16),
         _buildHeroCard(),
         const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: _FeatureCard(
-                title: 'Descargar Video',
-                subtitle: 'Descarga videos en diferentes calidades y formatos.',
-                chips: const ['MP4', 'WEBM', 'MKV', '3GP'],
-                gradient: AppColors.purpleGradient,
-                accent: AppColors.purple,
-                icon: Icons.play_arrow_rounded,
-                onTap: () => _onDownloadPressed(audioPreset: false),
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: _FeatureCard(
+                  title: 'Descargar Video',
+                  subtitle:
+                      'Descarga videos en diferentes calidades y formatos.',
+                  chips: const ['MP4', 'WEBM', 'MKV', '3GP'],
+                  gradient: AppColors.purpleGradient,
+                  accent: AppColors.purple,
+                  icon: Icons.play_arrow_rounded,
+                  onTap: () => _onDownloadPressed(audioPreset: false),
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _FeatureCard(
-                title: 'Descargar Música',
-                subtitle: 'Extrae y descarga música en alta calidad.',
-                chips: const ['MP3', 'M4A', 'AAC', 'OGG'],
-                gradient: AppColors.pinkGradient,
-                accent: AppColors.pink,
-                icon: Icons.music_note,
-                onTap: () => _onDownloadPressed(audioPreset: true),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _FeatureCard(
+                  title: 'Descargar Música',
+                  subtitle: 'Extrae y descarga música en alta calidad.',
+                  chips: const ['MP3', 'M4A', 'AAC', 'OGG'],
+                  gradient: AppColors.pinkGradient,
+                  accent: AppColors.pink,
+                  icon: Icons.music_note,
+                  onTap: () => _onDownloadPressed(audioPreset: true),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         const SizedBox(height: 16),
         _buildRecents(),
@@ -846,41 +850,12 @@ class _HeroArt extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Composición que evoca el arte del mockup (play + descarga + nota).
-    return SizedBox(
-      width: 96,
-      height: 96,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(
-            width: 74,
-            height: 74,
-            decoration: BoxDecoration(
-              gradient: AppColors.orangeGradient,
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.red.withValues(alpha: 0.4),
-                  blurRadius: 24,
-                ),
-              ],
-            ),
-            child: const Icon(Icons.play_arrow_rounded,
-                color: Colors.white, size: 44),
-          ),
-          const Positioned(
-            right: 2,
-            top: 0,
-            child: Icon(Icons.music_note, color: AppColors.pink, size: 26),
-          ),
-          const Positioned(
-            bottom: 2,
-            child: Icon(Icons.arrow_downward_rounded,
-                color: Colors.white, size: 22),
-          ),
-        ],
-      ),
+    // Icono de la app (sin fondo) como arte del hero.
+    return Image.asset(
+      'assets/icon/hero_logo.png',
+      width: 110,
+      height: 110,
+      fit: BoxFit.contain,
     );
   }
 }
@@ -962,6 +937,7 @@ class _FeatureCard extends StatelessWidget {
                       ))
                   .toList(),
             ),
+            const Spacer(),
             const SizedBox(height: 12),
             Align(
               alignment: Alignment.centerRight,
