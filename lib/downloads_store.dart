@@ -81,6 +81,11 @@ class DownloadsStore {
     await _channel.invokeMethod('openDownload', {'id': item.id});
   }
 
+  /// Comparte el archivo con otras apps.
+  static Future<void> share(DownloadItem item) async {
+    await _channel.invokeMethod('shareDownload', {'id': item.id});
+  }
+
   static Future<void> delete(DownloadItem item) async {
     await _channel.invokeMethod('deleteDownload', {'id': item.id});
   }

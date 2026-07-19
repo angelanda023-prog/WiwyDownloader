@@ -62,6 +62,7 @@ class MainActivity : FlutterActivity() {
                     )
                     "listDownloads" -> listDownloads(result)
                     "openDownload" -> openDownload(call.argument<String>("id"), result)
+                    "shareDownload" -> shareDownload(call.argument<String>("id"), result)
                     "deleteDownload" -> deleteDownload(call.argument<String>("id"), result)
                     else -> result.notImplemented()
                 }
@@ -337,6 +338,41 @@ class MainActivity : FlutterActivity() {
             result.success(true)
         } catch (e: Exception) {
             result.error("OPEN_FAILED", e.message, null)
+        }
+    }
+
+    /** Comparte un archivo con otras apps (WhatsApp, etc.). */
+    private fun shareDownload(id: String?, result: MethodChannel.Result) {
+        if (id.isNullOrBlank()) {
+            result.error("NO_ID", "id vacío", null); return
+        }
+        try {
+            val uri: Uri
+            val mime: String
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                uri = ContentUris.withAppendedId(
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI, id.toLong()
+                )
+                mime = contentResolver.getType(uri) ?: "*/*"
+            } else {
+                val file = File(id)
+                uri = androidx.core.content.FileProvider.getUriForFile(
+                    this, "$packageName.fileprovider", file
+                )
+                mime = mimeFor(file.name)
+            }
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = mime
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val chooser = Intent.createChooser(send, "Compartir con…").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(chooser)
+            result.success(true)
+        } catch (e: Exception) {
+            result.error("SHARE_FAILED", e.message, null)
         }
     }
 

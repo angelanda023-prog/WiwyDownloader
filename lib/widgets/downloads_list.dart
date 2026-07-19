@@ -15,6 +15,7 @@ class DownloadsListView extends StatelessWidget {
   final Future<void> Function() onRefresh;
   final void Function(DownloadItem) onDelete;
   final void Function(DownloadItem) onOpen;
+  final void Function(DownloadItem) onShare;
 
   const DownloadsListView({
     super.key,
@@ -24,6 +25,7 @@ class DownloadsListView extends StatelessWidget {
     required this.onRefresh,
     required this.onDelete,
     required this.onOpen,
+    required this.onShare,
   });
 
   List<DownloadItem> get _filtered {
@@ -68,8 +70,11 @@ class DownloadsListView extends StatelessWidget {
               itemCount: list.length,
               separatorBuilder: (context, i) =>
                   const Divider(color: AppColors.border, height: 16),
-              itemBuilder: (context, i) =>
-                  _DownloadTile(item: list[i], onDelete: onDelete, onOpen: onOpen),
+              itemBuilder: (context, i) => _DownloadTile(
+                  item: list[i],
+                  onDelete: onDelete,
+                  onOpen: onOpen,
+                  onShare: onShare),
             ),
     );
   }
@@ -79,8 +84,12 @@ class _DownloadTile extends StatelessWidget {
   final DownloadItem item;
   final void Function(DownloadItem) onDelete;
   final void Function(DownloadItem) onOpen;
+  final void Function(DownloadItem) onShare;
   const _DownloadTile(
-      {required this.item, required this.onDelete, required this.onOpen});
+      {required this.item,
+      required this.onDelete,
+      required this.onOpen,
+      required this.onShare});
 
   void _confirmDelete(BuildContext context) {
     showDialog<void>(
@@ -148,6 +157,11 @@ class _DownloadTile extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.share_outlined,
+                  color: AppColors.textMuted),
+              onPressed: () => onShare(item),
             ),
             IconButton(
               icon: const Icon(Icons.delete_outline,

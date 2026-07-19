@@ -57,6 +57,14 @@ class _MainScaffoldState extends State<MainScaffold> {
     }
   }
 
+  Future<void> _shareFile(DownloadItem item) async {
+    try {
+      await DownloadsStore.share(item);
+    } catch (e) {
+      if (mounted) _snack('No se pudo compartir: $e');
+    }
+  }
+
   Future<void> _initEngine() async {
     try {
       await YtdlpService.init();
@@ -262,22 +270,19 @@ class _MainScaffoldState extends State<MainScaffold> {
     final url = _urlController.text.trim();
     if (url.isEmpty) return;
 
-    // Título para mostrar en el progreso (mejor esfuerzo).
-    String title = url;
-    try {
-      final info = await YtdlpService.getInfo(url);
-      title = info.title.isNotEmpty ? info.title : url;
-    } catch (_) {}
-
     final progress = ValueNotifier<double>(0);
+    final titleN = ValueNotifier<String>('Preparando descarga…');
     final sub = YtdlpService.progressStream
         .listen((p) => progress.value = p.progress / 100);
 
     if (!mounted) {
       await sub.cancel();
       progress.dispose();
+      titleN.dispose();
       return;
     }
+    // Mostrar la hoja de progreso de inmediato (antes de leer el video),
+    // así el usuario ve "Preparando…" y no una pantalla congelada.
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.card,
@@ -291,11 +296,14 @@ class _MainScaffoldState extends State<MainScaffold> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontWeight: FontWeight.bold)),
+            ValueListenableBuilder<String>(
+              valueListenable: titleN,
+              builder: (context, t, child) => Text(t,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+            ),
             const SizedBox(height: 20),
             ValueListenableBuilder<double>(
               valueListenable: progress,
@@ -323,6 +331,11 @@ class _MainScaffoldState extends State<MainScaffold> {
     );
 
     try {
+      // Leer el título (mejor esfuerzo) y actualizarlo en la hoja.
+      try {
+        final info = await YtdlpService.getInfo(url);
+        if (info.title.isNotEmpty) titleN.value = info.title;
+      } catch (_) {}
       await YtdlpService.download(url,
           mode: audio ? 'audio' : 'video', quality: quality);
       if (mounted) {
@@ -338,6 +351,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     } finally {
       await sub.cancel();
       progress.dispose();
+      titleN.dispose();
     }
   }
 
@@ -487,6 +501,7 @@ class _MainScaffoldState extends State<MainScaffold> {
             onRefresh: _loadDownloads,
             onDelete: _deleteDownload,
             onOpen: _openFile,
+            onShare: _shareFile,
           ),
         ),
       ],
