@@ -1,0 +1,1069 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import 'app_colors.dart';
+import 'models.dart';
+import 'update_service.dart';
+import 'ytdlp_service.dart';
+import 'widgets/logo.dart';
+import 'widgets/site_icons.dart';
+
+class MainScaffold extends StatefulWidget {
+  const MainScaffold({super.key});
+
+  @override
+  State<MainScaffold> createState() => _MainScaffoldState();
+}
+
+class _MainScaffoldState extends State<MainScaffold> {
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _urlController = TextEditingController();
+  StreamSubscription? _progressSub;
+
+  int _navIndex = 0;
+
+  // Descargas recientes. Se rellena al descargar. Los primeros son de ejemplo
+  // para reflejar el diseño; puedes borrarlos cuando quieras.
+  final List<RecentDownload> _recents = [
+    RecentDownload(
+      title: 'Viaje a la Montaña – Documental',
+      format: 'MP4',
+      quality: '1080p',
+      size: '85.6 MB',
+      date: DateTime.now().subtract(const Duration(minutes: 2)),
+      isAudio: false,
+    ),
+    RecentDownload(
+      title: 'Lo Mejor de 2024 – Mix',
+      format: 'MP3',
+      quality: '320kbps',
+      size: '12.4 MB',
+      date: DateTime.now().subtract(const Duration(minutes: 15)),
+      isAudio: true,
+    ),
+    RecentDownload(
+      title: 'Noche en la Ciudad – Timelapse',
+      format: 'MP4',
+      quality: '720p',
+      size: '45.3 MB',
+      date: DateTime.now().subtract(const Duration(hours: 1)),
+      isAudio: false,
+    ),
+    RecentDownload(
+      title: 'Chill Vibes – Música Relajante',
+      format: 'MP3',
+      quality: '320kbps',
+      size: '18.7 MB',
+      date: DateTime.now().subtract(const Duration(hours: 3)),
+      isAudio: true,
+    ),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _initEngine();
+    _progressSub = YtdlpService.progressStream.listen((_) {});
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _checkUpdates(silent: true));
+  }
+
+  Future<void> _initEngine() async {
+    try {
+      await YtdlpService.init();
+    } catch (_) {
+      // Se reintentará al descargar.
+    }
+  }
+
+  @override
+  void dispose() {
+    _progressSub?.cancel();
+    _urlController.dispose();
+    super.dispose();
+  }
+
+  // ---------------------------------------------------------------- Pegar
+  Future<void> _paste() async {
+    final data = await Clipboard.getData('text/plain');
+    if (data?.text != null) {
+      setState(() => _urlController.text = data!.text!.trim());
+    }
+  }
+
+  // ------------------------------------------------------------- Descargar
+  void _onDownloadPressed({bool? audioPreset}) {
+    final url = _urlController.text.trim();
+    if (url.isEmpty) {
+      _snack('Pega primero un enlace.');
+      return;
+    }
+    _openDownloadSheet(audioPreset: audioPreset);
+  }
+
+  void _openDownloadSheet({bool? audioPreset}) {
+    bool audio = audioPreset ?? false;
+    String quality = audio ? '320' : '1080';
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final videoQ = {
+            'best': 'Máxima disponible',
+            '2160': '4K (2160p)',
+            '1080': 'Full HD (1080p)',
+            '720': 'HD (720p)',
+            '480': '480p',
+            '360': '360p',
+          };
+          final audioQ = {
+            'best': 'Máxima disponible',
+            '320': '320 kbps',
+            '192': '192 kbps',
+            '128': '128 kbps',
+          };
+          final options = audio ? audioQ : videoQ;
+          if (!options.containsKey(quality)) quality = options.keys.first;
+
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 20,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text('¿Qué quieres descargar?',
+                    style: TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    _typeChip(
+                      label: 'Video',
+                      icon: Icons.movie_outlined,
+                      selected: !audio,
+                      color: AppColors.purple,
+                      onTap: () => setSheet(() {
+                        audio = false;
+                        quality = '1080';
+                      }),
+                    ),
+                    const SizedBox(width: 12),
+                    _typeChip(
+                      label: 'Música',
+                      icon: Icons.music_note,
+                      selected: audio,
+                      color: AppColors.pink,
+                      onTap: () => setSheet(() {
+                        audio = true;
+                        quality = '320';
+                      }),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                const Text('Calidad',
+                    style: TextStyle(color: AppColors.textSecondary)),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  decoration: BoxDecoration(
+                    color: AppColors.inputBg,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: quality,
+                      isExpanded: true,
+                      dropdownColor: AppColors.cardSoft,
+                      items: options.entries
+                          .map((e) => DropdownMenuItem(
+                                value: e.key,
+                                child: Text(e.value),
+                              ))
+                          .toList(),
+                      onChanged: (v) =>
+                          setSheet(() => quality = v ?? quality),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: _GradientButton(
+                    label: 'Descargar',
+                    icon: Icons.download,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _startDownload(audio: audio, quality: quality);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _typeChip({
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            color: selected ? color.withValues(alpha: 0.18) : AppColors.inputBg,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? color : AppColors.border,
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, color: selected ? color : AppColors.textSecondary),
+              const SizedBox(height: 6),
+              Text(label,
+                  style: TextStyle(
+                      color: selected
+                          ? AppColors.textPrimary
+                          : AppColors.textSecondary,
+                      fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _startDownload({
+    required bool audio,
+    required String quality,
+  }) async {
+    final url = _urlController.text.trim();
+    if (url.isEmpty) return;
+
+    // Datos para la tarjeta (mejor esfuerzo).
+    String title = url;
+    String? thumb;
+    try {
+      final info = await YtdlpService.getInfo(url);
+      title = info.title.isNotEmpty ? info.title : url;
+      thumb = info.thumbnail.isNotEmpty ? info.thumbnail : null;
+    } catch (_) {}
+
+    final progress = ValueNotifier<double>(0);
+    final sub = YtdlpService.progressStream
+        .listen((p) => progress.value = p.progress / 100);
+
+    if (!mounted) {
+      await sub.cancel();
+      progress.dispose();
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.card,
+      isDismissible: false,
+      enableDrag: false,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 20),
+            ValueListenableBuilder<double>(
+              valueListenable: progress,
+              builder: (context, v, child) => Column(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      value: v > 0 ? v : null,
+                      minHeight: 10,
+                      backgroundColor: AppColors.inputBg,
+                      valueColor:
+                          const AlwaysStoppedAnimation(AppColors.orange),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text('${(v * 100).toStringAsFixed(0)}%',
+                      style: const TextStyle(color: AppColors.textSecondary)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      await YtdlpService.download(url,
+          mode: audio ? 'audio' : 'video', quality: quality);
+      if (mounted) {
+        Navigator.of(context).pop(); // cerrar progreso
+        setState(() {
+          _recents.insert(
+            0,
+            RecentDownload(
+              title: title,
+              format: audio ? 'MP3' : 'MP4',
+              quality: audio ? '${quality == "best" ? "máx" : quality}kbps' : '${quality}p',
+              size: '—',
+              date: DateTime.now(),
+              isAudio: audio,
+              thumbnail: thumb,
+            ),
+          );
+        });
+        _snack('¡Descarga completada! 🎉');
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        _snack('Falló la descarga: $e');
+      }
+    } finally {
+      await sub.cancel();
+      progress.dispose();
+    }
+  }
+
+  // ---------------------------------------------------------- Actualizaciones
+  Future<void> _checkUpdates({bool silent = false}) async {
+    try {
+      final update = await UpdateService.checkForUpdate();
+      if (!mounted) return;
+      if (update == null) {
+        if (!silent) _snack('Ya tienes la última versión ✅');
+        return;
+      }
+      _showUpdateDialog(update);
+    } catch (e) {
+      if (!silent && mounted) _snack('No se pudo buscar actualizaciones: $e');
+    }
+  }
+
+  void _showUpdateDialog(UpdateInfo update) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: Text('Actualización disponible (${update.versionName})'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Hay una nueva versión de Wiwy Downloader.'),
+            if (update.notes.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              const Text('Novedades:',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Text(update.notes),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Después'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.orange),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _runUpdate(update);
+            },
+            child: const Text('Instalar ahora'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _runUpdate(UpdateInfo update) async {
+    final progress = ValueNotifier<double>(0);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: const Text('Descargando actualización…'),
+        content: ValueListenableBuilder<double>(
+          valueListenable: progress,
+          builder: (context, value, child) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              LinearProgressIndicator(value: value > 0 ? value : null),
+              const SizedBox(height: 12),
+              Text('${(value * 100).toStringAsFixed(0)}%'),
+            ],
+          ),
+        ),
+      ),
+    );
+    try {
+      await UpdateService.downloadAndInstall(update,
+          onProgress: (p) => progress.value = p);
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        _snack('Error al actualizar: $e');
+      }
+    } finally {
+      progress.dispose();
+    }
+  }
+
+  void _snack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  // -------------------------------------------------------------- BUILD
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      key: _scaffoldKey,
+      backgroundColor: AppColors.bg,
+      drawer: _buildDrawer(),
+      body: SafeArea(
+        child: IndexedStack(
+          index: _navIndex,
+          children: [
+            _buildHome(),
+            _placeholder('Descargas', Icons.download),
+            _placeholder('Música', Icons.music_note),
+            _placeholder('Videos', Icons.play_circle_outline),
+            _placeholder('Historial', Icons.history),
+          ],
+        ),
+      ),
+      bottomNavigationBar: _buildBottomNav(),
+    );
+  }
+
+  Widget _placeholder(String label, IconData icon) => Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 56, color: AppColors.textMuted),
+            const SizedBox(height: 12),
+            Text('$label\nPróximamente',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.textSecondary)),
+          ],
+        ),
+      );
+
+  // --------------------------------------------------------------- HOME
+  Widget _buildHome() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      children: [
+        _buildTopBar(),
+        const SizedBox(height: 16),
+        _buildHeroCard(),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _FeatureCard(
+                title: 'Descargar Video',
+                subtitle: 'Descarga videos en diferentes calidades y formatos.',
+                chips: const ['MP4', 'WEBM', 'MKV', '3GP'],
+                gradient: AppColors.purpleGradient,
+                accent: AppColors.purple,
+                icon: Icons.play_arrow_rounded,
+                onTap: () => _onDownloadPressed(audioPreset: false),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _FeatureCard(
+                title: 'Descargar Música',
+                subtitle: 'Extrae y descarga música en alta calidad.',
+                chips: const ['MP3', 'M4A', 'AAC', 'OGG'],
+                gradient: AppColors.pinkGradient,
+                accent: AppColors.pink,
+                icon: Icons.music_note,
+                onTap: () => _onDownloadPressed(audioPreset: true),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _buildRecents(),
+      ],
+    );
+  }
+
+  Widget _buildTopBar() {
+    return Row(
+      children: [
+        IconButton(
+          icon: const Icon(Icons.menu, color: AppColors.textPrimary),
+          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+        ),
+        const Spacer(),
+        const WiwyLogo(),
+        const Spacer(),
+        // (sin botón premium)
+        const SizedBox(width: 48),
+      ],
+    );
+  }
+
+  Widget _buildHeroCard() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: RichText(
+                  text: const TextSpan(
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      height: 1.15,
+                      color: AppColors.textPrimary,
+                    ),
+                    children: [
+                      TextSpan(text: 'Descarga\n'),
+                      TextSpan(
+                        text: 'videos y música\n',
+                        style: TextStyle(color: AppColors.orange),
+                      ),
+                      TextSpan(
+                        text: 'de cualquier página web',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const _HeroArt(),
+            ],
+          ),
+          const SizedBox(height: 20),
+          _buildUrlField(),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: _GradientButton(
+              label: 'Descargar',
+              icon: Icons.download,
+              onTap: _onDownloadPressed,
+            ),
+          ),
+          const SizedBox(height: 14),
+          const Center(
+            child: Text('Soportamos más de 1000 sitios web',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+          ),
+          const SizedBox(height: 14),
+          const SiteIconsRow(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUrlField() {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.inputBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      padding: const EdgeInsets.only(left: 14, right: 8),
+      child: Row(
+        children: [
+          const Icon(Icons.link, color: AppColors.textSecondary, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: _urlController,
+              style: const TextStyle(color: AppColors.textPrimary),
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: 'Pega aquí el enlace del video o música…',
+                hintStyle:
+                    TextStyle(color: AppColors.textMuted, fontSize: 14),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            onPressed: _paste,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.orange,
+              side: const BorderSide(color: AppColors.orange),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            icon: const Icon(Icons.content_paste, size: 16),
+            label: const Text('Pegar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecents() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Descargas recientes',
+                  style:
+                      TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+              GestureDetector(
+                onTap: () => setState(() => _navIndex = 1),
+                child: const Text('Ver todo',
+                    style: TextStyle(color: AppColors.orange)),
+              ),
+            ],
+          ),
+          const Divider(color: AppColors.border, height: 24),
+          if (_recents.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text('Aún no has descargado nada.',
+                    style: TextStyle(color: AppColors.textMuted)),
+              ),
+            )
+          else
+            ...List.generate(
+              _recents.length,
+              (i) => _RecentTile(item: _recents[i]),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------- NAV
+  Widget _buildBottomNav() {
+    const items = [
+      (Icons.home_rounded, 'Inicio'),
+      (Icons.download_rounded, 'Descargas'),
+      (Icons.music_note_rounded, 'Música'),
+      (Icons.play_circle_fill_rounded, 'Videos'),
+      (Icons.history_rounded, 'Historial'),
+    ];
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.card,
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: SafeArea(
+        top: false,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: List.generate(items.length, (i) {
+            final selected = _navIndex == i;
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _navIndex = i),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(items[i].$1,
+                      color: selected
+                          ? AppColors.orange
+                          : AppColors.textMuted),
+                  const SizedBox(height: 4),
+                  Text(items[i].$2,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: selected
+                            ? AppColors.orange
+                            : AppColors.textMuted,
+                      )),
+                ],
+              ),
+            );
+          }),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDrawer() {
+    return Drawer(
+      backgroundColor: AppColors.card,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(20),
+              child: WiwyLogo(),
+            ),
+            const Divider(color: AppColors.border),
+            _drawerItem(Icons.home_rounded, 'Inicio', () {
+              Navigator.pop(context);
+              setState(() => _navIndex = 0);
+            }),
+            _drawerItem(Icons.system_update, 'Buscar actualizaciones', () {
+              Navigator.pop(context);
+              _checkUpdates(silent: false);
+            }),
+            _drawerItem(Icons.folder_open, 'Mis descargas', () {
+              Navigator.pop(context);
+              setState(() => _navIndex = 1);
+            }),
+            const Spacer(),
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Wiwy Downloader · v1.0.0',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _drawerItem(IconData icon, String label, VoidCallback onTap) {
+    return ListTile(
+      leading: Icon(icon, color: AppColors.textSecondary),
+      title: Text(label, style: const TextStyle(color: AppColors.textPrimary)),
+      onTap: onTap,
+    );
+  }
+}
+
+// ============================================================ WIDGETS
+
+class _GradientButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  const _GradientButton(
+      {required this.label, required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 54,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          gradient: AppColors.orangeGradient,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.orange.withValues(alpha: 0.35),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: Colors.white),
+            const SizedBox(width: 8),
+            Text(label,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HeroArt extends StatelessWidget {
+  const _HeroArt();
+
+  @override
+  Widget build(BuildContext context) {
+    // Composición que evoca el arte del mockup (play + descarga + nota).
+    return SizedBox(
+      width: 96,
+      height: 96,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: 74,
+            height: 74,
+            decoration: BoxDecoration(
+              gradient: AppColors.orangeGradient,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.red.withValues(alpha: 0.4),
+                  blurRadius: 24,
+                ),
+              ],
+            ),
+            child: const Icon(Icons.play_arrow_rounded,
+                color: Colors.white, size: 44),
+          ),
+          const Positioned(
+            right: 2,
+            top: 0,
+            child: Icon(Icons.music_note, color: AppColors.pink, size: 26),
+          ),
+          const Positioned(
+            bottom: 2,
+            child: Icon(Icons.arrow_downward_rounded,
+                color: Colors.white, size: 22),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FeatureCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final List<String> chips;
+  final Gradient gradient;
+  final Color accent;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _FeatureCard({
+    required this.title,
+    required this.subtitle,
+    required this.chips,
+    required this.gradient,
+    required this.accent,
+    required this.icon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, color: accent, size: 18),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(title,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 14)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(subtitle,
+                style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                    height: 1.3)),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: chips
+                  .map((c) => Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(c,
+                            style: TextStyle(
+                                color: accent,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600)),
+                      ))
+                  .toList(),
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  gradient: gradient,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.download, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RecentTile extends StatelessWidget {
+  final RecentDownload item;
+  const _RecentTile({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          // Miniatura
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                gradient: item.isAudio
+                    ? AppColors.pinkGradient
+                    : AppColors.purpleGradient,
+              ),
+              child: item.thumbnail != null
+                  ? Image.network(item.thumbnail!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stack) => const Icon(
+                          Icons.play_arrow, color: Colors.white))
+                  : Icon(item.isAudio ? Icons.music_note : Icons.play_arrow,
+                      color: Colors.white),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w600, fontSize: 14)),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(
+                        item.isAudio
+                            ? Icons.music_note
+                            : Icons.play_circle_outline,
+                        size: 13,
+                        color: item.isAudio
+                            ? AppColors.pink
+                            : AppColors.purple),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                          '${item.format} • ${item.quality} • ${item.size}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: AppColors.textSecondary, fontSize: 12)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(item.timeAgo,
+              style: const TextStyle(
+                  color: AppColors.textSecondary, fontSize: 11)),
+          const SizedBox(width: 8),
+          const Icon(Icons.check_circle, color: AppColors.green, size: 20),
+          IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            icon: const Icon(Icons.more_vert,
+                color: AppColors.textMuted, size: 20),
+            onPressed: () {},
+          ),
+        ],
+      ),
+    );
+  }
+}

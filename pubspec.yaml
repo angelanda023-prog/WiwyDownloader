@@ -35,9 +35,19 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
 
+  # --- Actualizaciones OTA ---
+  http: ^1.2.2               # descargar manifiesto y APK
+  package_info_plus: ^8.1.0  # versión instalada actual
+  open_filex: ^4.5.0         # abrir el APK descargado (dispara el instalador)
+  permission_handler: ^11.3.1 # permiso "instalar apps desconocidas"
+  path_provider: ^2.1.5      # carpeta temporal para el APK
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
+  # Genera los iconos de la app desde una sola imagen
+  flutter_launcher_icons: ^0.14.1
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
@@ -45,6 +55,18 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+
+# Configuración del icono de la app (imagen fuente: assets/icon/wiwy_icon.png)
+flutter_launcher_icons:
+  android: true
+  ios: false
+  windows:
+    generate: true
+    icon_size: 256
+  image_path: "assets/icon/wiwy_icon.png"
+  # Fondo blanco para el icono adaptativo (el logo tiene fondo blanco)
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/icon/wiwy_icon.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
