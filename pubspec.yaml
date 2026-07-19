@@ -80,7 +80,7 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/icon/hero_logo.png
+    - assets/icon/hero_download.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

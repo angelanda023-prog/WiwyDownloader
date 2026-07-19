@@ -852,9 +852,9 @@ class _HeroArt extends StatelessWidget {
   Widget build(BuildContext context) {
     // Icono de la app (sin fondo) como arte del hero.
     return Image.asset(
-      'assets/icon/hero_logo.png',
-      width: 110,
-      height: 110,
+      'assets/icon/hero_download.png',
+      width: 115,
+      height: 115,
       fit: BoxFit.contain,
     );
   }
