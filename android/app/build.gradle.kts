@@ -24,11 +24,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-
-        // Arquitecturas soportadas por yt-dlp/ffmpeg empaquetado
-        ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
-        }
+        // Las arquitecturas se controlan con `flutter build apk --split-per-abi`.
     }
 
     // yt-dlp/python/ffmpeg vienen como .so nativos que deben extraerse en tiempo de ejecución
