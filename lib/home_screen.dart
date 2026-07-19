@@ -262,8 +262,10 @@ class _MainScaffoldState extends State<MainScaffold> {
                     label: 'Descargar',
                     icon: Icons.download,
                     onTap: () {
+                      final t = infoN.value?.title;
                       Navigator.pop(ctx);
-                      _startDownload(audio: audio, quality: quality);
+                      _startDownload(
+                          audio: audio, quality: quality, preTitle: t);
                     },
                   ),
                 ),
@@ -315,12 +317,16 @@ class _MainScaffoldState extends State<MainScaffold> {
   Future<void> _startDownload({
     required bool audio,
     required String quality,
+    String? preTitle,
   }) async {
     final url = _urlController.text.trim();
     if (url.isEmpty) return;
 
     final progress = ValueNotifier<double>(0);
-    final titleN = ValueNotifier<String>('Preparando descarga…');
+    final titleN = ValueNotifier<String>(
+        (preTitle != null && preTitle.isNotEmpty)
+            ? preTitle
+            : 'Preparando descarga…');
     final sub = YtdlpService.progressStream
         .listen((p) => progress.value = p.progress / 100);
 
@@ -380,11 +386,6 @@ class _MainScaffoldState extends State<MainScaffold> {
     );
 
     try {
-      // Leer el título (mejor esfuerzo) y actualizarlo en la hoja.
-      try {
-        final info = await YtdlpService.getInfo(url);
-        if (info.title.isNotEmpty) titleN.value = info.title;
-      } catch (_) {}
       await YtdlpService.download(url,
           mode: audio ? 'audio' : 'video', quality: quality);
       if (mounted) {
@@ -404,15 +405,43 @@ class _MainScaffoldState extends State<MainScaffold> {
     }
   }
 
-  /// Extrae un mensaje legible de una PlatformException u otro error.
+  /// Traduce el error de yt-dlp a un mensaje amigable en español.
   String _cleanError(Object e) {
-    var msg = e is PlatformException ? (e.message ?? e.code) : e.toString();
-    // Recortar trazas largas de yt-dlp: quedarnos con lo esencial.
-    if (msg.contains('ERROR:')) {
-      msg = msg.substring(msg.indexOf('ERROR:') + 6).trim();
+    var raw = e is PlatformException ? (e.message ?? e.code) : e.toString();
+    final lower = raw.toLowerCase();
+
+    if (lower.contains('unsupported url')) {
+      return 'Esta página no es compatible. Pega el enlace directo del video o de la música (por ejemplo de YouTube, TikTok, Instagram, Facebook…).';
     }
-    if (msg.length > 300) msg = '${msg.substring(0, 300)}…';
-    return msg.isEmpty ? 'Ocurrió un error desconocido.' : msg;
+    if (lower.contains('no se encontró video')) {
+      return 'No se encontró video o música descargable en esa página.';
+    }
+    if (lower.contains('requested format is not available')) {
+      return 'No hay un formato disponible para esa calidad. Prueba con otra calidad.';
+    }
+    if (lower.contains('video unavailable') || lower.contains('private video')) {
+      return 'El video no está disponible (privado o eliminado).';
+    }
+    if (lower.contains('sign in to confirm') ||
+        lower.contains('age-restrict') ||
+        lower.contains('confirm your age') ||
+        lower.contains('inappropriate for some users')) {
+      return 'Ese contenido requiere iniciar sesión o tiene restricción de edad.';
+    }
+    if (lower.contains('unable to download webpage') ||
+        lower.contains('failed to resolve') ||
+        lower.contains('connection') ||
+        lower.contains('timed out')) {
+      return 'No se pudo acceder a la página. Revisa el enlace o tu conexión.';
+    }
+
+    // Genérico: quedarnos con la línea de ERROR, sin trazas.
+    if (raw.contains('ERROR:')) {
+      raw = raw.substring(raw.indexOf('ERROR:') + 6).trim();
+    }
+    raw = raw.split('\n').first.trim();
+    if (raw.length > 200) raw = '${raw.substring(0, 200)}…';
+    return raw.isEmpty ? 'Ocurrió un error desconocido.' : raw;
   }
 
   void _showErrorDialog(String message) {
@@ -422,12 +451,12 @@ class _MainScaffoldState extends State<MainScaffold> {
         backgroundColor: AppColors.card,
         title: const Row(
           children: [
-            Icon(Icons.error_outline, color: Colors.redAccent),
+            Icon(Icons.error_outline, color: Colors.redAccent, size: 22),
             SizedBox(width: 8),
-            Text('No se pudo descargar'),
+            Expanded(child: Text('No se pudo descargar')),
           ],
         ),
-        content: Text(message),
+        content: Text(message, style: const TextStyle(height: 1.35)),
         actions: [
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppColors.orange),
