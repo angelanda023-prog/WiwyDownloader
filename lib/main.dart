@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'app_colors.dart';
-import 'home_screen.dart';
+import 'splash_screen.dart';
 
 void main() => runApp(const WiwyApp());
 
@@ -22,7 +22,7 @@ class WiwyApp extends StatelessWidget {
         fontFamily: 'Roboto',
         useMaterial3: true,
       ),
-      home: const MainScaffold(),
+      home: const SplashScreen(),
     );
   }
 }

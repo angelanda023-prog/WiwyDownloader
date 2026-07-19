@@ -1,6 +1,6 @@
 {
-  "versionCode": 4,
-  "versionName": "1.0.3",
-  "notes": "• Mensaje de error claro y bien formateado\n• Descargas más rápidas (no lee el video dos veces)\n• Muestra la resolución máxima del video\n• Botón para cerrar el menú lateral",
-  "apkUrl": "https://github.com/angelanda023-prog/WiwyDownloader/releases/download/v1.0.3/WiwyDownloader-1.0.3-arm64-v8a.apk"
+  "versionCode": 5,
+  "versionName": "1.0.4",
+  "notes": "• Nueva animación de bienvenida con onda naranja",
+  "apkUrl": "https://github.com/angelanda023-prog/WiwyDownloader/releases/download/v1.0.4/WiwyDownloader-1.0.4-arm64-v8a.apk"
 }
