@@ -23,6 +23,7 @@ class _MainScaffoldState extends State<MainScaffold> {
   StreamSubscription? _progressSub;
 
   int _navIndex = 0;
+  String _appVersion = '';
 
   // Archivos realmente descargados (leídos de la carpeta de la app).
   List<DownloadItem> _downloads = [];
@@ -32,9 +33,17 @@ class _MainScaffoldState extends State<MainScaffold> {
     super.initState();
     _initEngine();
     _loadDownloads();
+    _loadVersion();
     _progressSub = YtdlpService.progressStream.listen((_) {});
     WidgetsBinding.instance
         .addPostFrameCallback((_) => _checkUpdates(silent: true));
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final v = await UpdateService.currentVersionName();
+      if (mounted) setState(() => _appVersion = v);
+    } catch (_) {}
   }
 
   Future<void> _loadDownloads() async {
@@ -101,6 +110,16 @@ class _MainScaffoldState extends State<MainScaffold> {
   void _openDownloadSheet({bool? audioPreset}) {
     bool audio = audioPreset ?? false;
     String quality = audio ? '320' : '1080';
+    final url = _urlController.text.trim();
+
+    // Detectar en segundo plano hasta qué resolución llega el video.
+    // null = detectando; con valor = ya se sabe (heights puede venir vacío).
+    final infoN = ValueNotifier<MediaInfo?>(null);
+    YtdlpService.getInfo(url).then((info) {
+      infoN.value = info;
+    }).catchError((_) {
+      infoN.value = MediaInfo(title: '', uploader: '', duration: 0, thumbnail: '');
+    });
 
     showModalBottomSheet<void>(
       context: context,
@@ -206,7 +225,37 @@ class _MainScaffoldState extends State<MainScaffold> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 10),
+                // Aviso de la calidad real del video (solo modo video).
+                if (!audio)
+                  ValueListenableBuilder<MediaInfo?>(
+                    valueListenable: infoN,
+                    builder: (context, info, child) {
+                      if (info == null) {
+                        return const Row(children: [
+                          SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(strokeWidth: 2)),
+                          SizedBox(width: 8),
+                          Text('Detectando calidad del video…',
+                              style: TextStyle(
+                                  color: AppColors.textMuted, fontSize: 12)),
+                        ]);
+                      }
+                      final max = info.maxHeight;
+                      if (max == null) return const SizedBox.shrink();
+                      return Row(children: [
+                        const Icon(Icons.hd_outlined,
+                            size: 15, color: AppColors.green),
+                        const SizedBox(width: 6),
+                        Text('Este video llega hasta ${max}p',
+                            style: const TextStyle(
+                                color: AppColors.green, fontSize: 12)),
+                      ]);
+                    },
+                  ),
+                const SizedBox(height: 20),
                 SizedBox(
                   width: double.infinity,
                   child: _GradientButton(
@@ -346,13 +395,48 @@ class _MainScaffoldState extends State<MainScaffold> {
     } catch (e) {
       if (mounted) {
         Navigator.of(context).pop();
-        _snack('Falló la descarga: $e');
+        _showErrorDialog(_cleanError(e));
       }
     } finally {
       await sub.cancel();
       progress.dispose();
       titleN.dispose();
     }
+  }
+
+  /// Extrae un mensaje legible de una PlatformException u otro error.
+  String _cleanError(Object e) {
+    var msg = e is PlatformException ? (e.message ?? e.code) : e.toString();
+    // Recortar trazas largas de yt-dlp: quedarnos con lo esencial.
+    if (msg.contains('ERROR:')) {
+      msg = msg.substring(msg.indexOf('ERROR:') + 6).trim();
+    }
+    if (msg.length > 300) msg = '${msg.substring(0, 300)}…';
+    return msg.isEmpty ? 'Ocurrió un error desconocido.' : msg;
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: const Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.redAccent),
+            SizedBox(width: 8),
+            Text('No se pudo descargar'),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.orange),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
   }
 
   // ---------------------------------------------------------- Actualizaciones
@@ -779,9 +863,18 @@ class _MainScaffoldState extends State<MainScaffold> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.all(20),
-              child: WiwyLogo(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 8, 12),
+              child: Row(
+                children: [
+                  const Expanded(child: WiwyLogo()),
+                  IconButton(
+                    tooltip: 'Cerrar menú',
+                    icon: const Icon(Icons.close, color: AppColors.textSecondary),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
             ),
             const Divider(color: AppColors.border),
             _drawerItem(Icons.home_rounded, 'Inicio', () {
@@ -797,10 +890,12 @@ class _MainScaffoldState extends State<MainScaffold> {
               setState(() => _navIndex = 1);
             }),
             const Spacer(),
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('Wiwy Downloader · v1.0.0',
-                  style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                  'Wiwy Downloader · v${_appVersion.isEmpty ? "…" : _appVersion}',
+                  style: const TextStyle(
+                      color: AppColors.textMuted, fontSize: 12)),
             ),
           ],
         ),

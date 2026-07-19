@@ -7,12 +7,14 @@ class MediaInfo {
   final String uploader;
   final int duration; // segundos
   final String thumbnail;
+  final List<int> heights; // resoluciones disponibles (px), mayor a menor
 
   MediaInfo({
     required this.title,
     required this.uploader,
     required this.duration,
     required this.thumbnail,
+    this.heights = const [],
   });
 
   factory MediaInfo.fromJson(Map<String, dynamic> j) => MediaInfo(
@@ -22,7 +24,14 @@ class MediaInfo {
             ? j['duration'] ?? 0
             : (j['duration'] as num).toInt(),
         thumbnail: j['thumbnail'] ?? '',
+        heights: (j['heights'] as List<dynamic>?)
+                ?.map((e) => (e as num).toInt())
+                .toList() ??
+            const [],
       );
+
+  /// Máxima resolución disponible (p. ej. 1080), o null si se desconoce.
+  int? get maxHeight => heights.isNotEmpty ? heights.first : null;
 }
 
 /// Progreso de una descarga en curso.

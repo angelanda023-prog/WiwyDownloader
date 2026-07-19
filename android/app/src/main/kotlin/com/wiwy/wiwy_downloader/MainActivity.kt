@@ -113,11 +113,25 @@ class MainActivity : FlutterActivity() {
         scope.launch {
             try {
                 val info = YoutubeDL.getInstance().getInfo(url)
+                // Resoluciones de video disponibles (altura en px), de mayor a menor.
+                val heights = try {
+                    info.formats
+                        ?.filter { it.vcodec != null && it.vcodec != "none" && it.height > 0 }
+                        ?.map { it.height }
+                        ?.distinct()
+                        ?.sortedDescending()
+                        ?: emptyList()
+                } catch (_: Throwable) {
+                    emptyList()
+                }
+                val heightsArr = JSONArray()
+                heights.forEach { heightsArr.put(it) }
                 val json = JSONObject().apply {
                     put("title", info.title ?: "")
                     put("uploader", info.uploader ?: "")
                     put("duration", info.duration)
                     put("thumbnail", info.thumbnail ?: "")
+                    put("heights", heightsArr)
                 }
                 withContext(Dispatchers.Main) { result.success(json.toString()) }
             } catch (e: Exception) {
@@ -186,6 +200,10 @@ class MainActivity : FlutterActivity() {
                 // Exportar los archivos producidos a Descargas/WiwyDownloader.
                 val produced = staging.listFiles()?.filter { it.isFile } ?: emptyList()
                 Log.d("WiwyDL", "descarga OK; archivos en staging: ${produced.size} -> ${produced.map { it.name }}")
+                if (produced.isEmpty()) {
+                    staging.deleteRecursively()
+                    throw Exception("No se encontró video o música descargable en esa página.")
+                }
                 for (f in produced) {
                     Log.d("WiwyDL", "exportando ${f.name} (${f.length()} bytes)")
                     exportToPublicDownloads(f)
