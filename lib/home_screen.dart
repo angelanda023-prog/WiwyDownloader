@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:open_filex/open_filex.dart';
 
 import 'app_colors.dart';
-import 'models.dart';
+import 'downloads_store.dart';
 import 'update_service.dart';
 import 'ytdlp_service.dart';
+import 'widgets/downloads_list.dart';
 import 'widgets/logo.dart';
 import 'widgets/site_icons.dart';
 
@@ -23,50 +25,36 @@ class _MainScaffoldState extends State<MainScaffold> {
 
   int _navIndex = 0;
 
-  // Descargas recientes. Se rellena al descargar. Los primeros son de ejemplo
-  // para reflejar el diseño; puedes borrarlos cuando quieras.
-  final List<RecentDownload> _recents = [
-    RecentDownload(
-      title: 'Viaje a la Montaña – Documental',
-      format: 'MP4',
-      quality: '1080p',
-      size: '85.6 MB',
-      date: DateTime.now().subtract(const Duration(minutes: 2)),
-      isAudio: false,
-    ),
-    RecentDownload(
-      title: 'Lo Mejor de 2024 – Mix',
-      format: 'MP3',
-      quality: '320kbps',
-      size: '12.4 MB',
-      date: DateTime.now().subtract(const Duration(minutes: 15)),
-      isAudio: true,
-    ),
-    RecentDownload(
-      title: 'Noche en la Ciudad – Timelapse',
-      format: 'MP4',
-      quality: '720p',
-      size: '45.3 MB',
-      date: DateTime.now().subtract(const Duration(hours: 1)),
-      isAudio: false,
-    ),
-    RecentDownload(
-      title: 'Chill Vibes – Música Relajante',
-      format: 'MP3',
-      quality: '320kbps',
-      size: '18.7 MB',
-      date: DateTime.now().subtract(const Duration(hours: 3)),
-      isAudio: true,
-    ),
-  ];
+  // Archivos realmente descargados (leídos de la carpeta de la app).
+  List<DownloadItem> _downloads = [];
 
   @override
   void initState() {
     super.initState();
     _initEngine();
+    _loadDownloads();
     _progressSub = YtdlpService.progressStream.listen((_) {});
     WidgetsBinding.instance
         .addPostFrameCallback((_) => _checkUpdates(silent: true));
+  }
+
+  Future<void> _loadDownloads() async {
+    try {
+      final items = await DownloadsStore.list();
+      if (mounted) setState(() => _downloads = items);
+    } catch (_) {}
+  }
+
+  Future<void> _deleteDownload(DownloadItem item) async {
+    await DownloadsStore.delete(item);
+    await _loadDownloads();
+  }
+
+  Future<void> _openFile(DownloadItem item) async {
+    final res = await OpenFilex.open(item.file.path);
+    if (res.type != ResultType.done && mounted) {
+      _snack('No se pudo abrir el archivo: ${res.message}');
+    }
   }
 
   Future<void> _initEngine() async {
@@ -274,13 +262,11 @@ class _MainScaffoldState extends State<MainScaffold> {
     final url = _urlController.text.trim();
     if (url.isEmpty) return;
 
-    // Datos para la tarjeta (mejor esfuerzo).
+    // Título para mostrar en el progreso (mejor esfuerzo).
     String title = url;
-    String? thumb;
     try {
       final info = await YtdlpService.getInfo(url);
       title = info.title.isNotEmpty ? info.title : url;
-      thumb = info.thumbnail.isNotEmpty ? info.thumbnail : null;
     } catch (_) {}
 
     final progress = ValueNotifier<double>(0);
@@ -341,20 +327,7 @@ class _MainScaffoldState extends State<MainScaffold> {
           mode: audio ? 'audio' : 'video', quality: quality);
       if (mounted) {
         Navigator.of(context).pop(); // cerrar progreso
-        setState(() {
-          _recents.insert(
-            0,
-            RecentDownload(
-              title: title,
-              format: audio ? 'MP3' : 'MP4',
-              quality: audio ? '${quality == "best" ? "máx" : quality}kbps' : '${quality}p',
-              size: '—',
-              date: DateTime.now(),
-              isAudio: audio,
-              thumbnail: thumb,
-            ),
-          );
-        });
+        await _loadDownloads(); // refrescar con el archivo real
         _snack('¡Descarga completada! 🎉');
       }
     } catch (e) {
@@ -472,10 +445,14 @@ class _MainScaffoldState extends State<MainScaffold> {
           index: _navIndex,
           children: [
             _buildHome(),
-            _placeholder('Descargas', Icons.download),
-            _placeholder('Música', Icons.music_note),
-            _placeholder('Videos', Icons.play_circle_outline),
-            _placeholder('Historial', Icons.history),
+            _buildTab('Descargas', DownloadFilter.all,
+                'Aún no has descargado nada.'),
+            _buildTab('Música', DownloadFilter.audio,
+                'No tienes música descargada.'),
+            _buildTab('Videos', DownloadFilter.video,
+                'No tienes videos descargados.'),
+            _buildTab('Historial', DownloadFilter.all,
+                'Tu historial está vacío.'),
           ],
         ),
       ),
@@ -483,18 +460,37 @@ class _MainScaffoldState extends State<MainScaffold> {
     );
   }
 
-  Widget _placeholder(String label, IconData icon) => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 56, color: AppColors.textMuted),
-            const SizedBox(height: 12),
-            Text('$label\nPróximamente',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.textSecondary)),
-          ],
+  Widget _buildTab(String title, DownloadFilter filter, String emptyText) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(title,
+                  style: const TextStyle(
+                      fontSize: 22, fontWeight: FontWeight.bold)),
+              IconButton(
+                tooltip: 'Refrescar',
+                icon: const Icon(Icons.refresh, color: AppColors.textSecondary),
+                onPressed: _loadDownloads,
+              ),
+            ],
+          ),
         ),
-      );
+        Expanded(
+          child: DownloadsListView(
+            items: _downloads,
+            filter: filter,
+            emptyText: emptyText,
+            onRefresh: _loadDownloads,
+            onDelete: _deleteDownload,
+          ),
+        ),
+      ],
+    );
+  }
 
   // --------------------------------------------------------------- HOME
   Widget _buildHome() {
@@ -688,7 +684,7 @@ class _MainScaffoldState extends State<MainScaffold> {
             ],
           ),
           const Divider(color: AppColors.border, height: 24),
-          if (_recents.isEmpty)
+          if (_downloads.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 24),
               child: Center(
@@ -697,10 +693,9 @@ class _MainScaffoldState extends State<MainScaffold> {
               ),
             )
           else
-            ...List.generate(
-              _recents.length,
-              (i) => _RecentTile(item: _recents[i]),
-            ),
+            ..._downloads
+                .take(4)
+                .map((item) => _RecentTile(item: item, onOpen: _openFile)),
         ],
       ),
     );
@@ -729,7 +724,10 @@ class _MainScaffoldState extends State<MainScaffold> {
             final selected = _navIndex == i;
             return GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: () => setState(() => _navIndex = i),
+              onTap: () {
+                setState(() => _navIndex = i);
+                if (i != 0) _loadDownloads();
+              },
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -985,84 +983,74 @@ class _FeatureCard extends StatelessWidget {
 }
 
 class _RecentTile extends StatelessWidget {
-  final RecentDownload item;
-  const _RecentTile({required this.item});
+  final DownloadItem item;
+  final void Function(DownloadItem) onOpen;
+  const _RecentTile({required this.item, required this.onOpen});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          // Miniatura
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
+    return InkWell(
+      onTap: () => onOpen(item),
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            // Miniatura (gradiente según tipo)
+            Container(
               width: 56,
               height: 56,
               decoration: BoxDecoration(
                 gradient: item.isAudio
                     ? AppColors.pinkGradient
                     : AppColors.purpleGradient,
+                borderRadius: BorderRadius.circular(10),
               ),
-              child: item.thumbnail != null
-                  ? Image.network(item.thumbnail!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stack) => const Icon(
-                          Icons.play_arrow, color: Colors.white))
-                  : Icon(item.isAudio ? Icons.music_note : Icons.play_arrow,
-                      color: Colors.white),
+              child: Icon(item.isAudio ? Icons.music_note : Icons.play_arrow,
+                  color: Colors.white),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(item.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w600, fontSize: 14)),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Icon(
-                        item.isAudio
-                            ? Icons.music_note
-                            : Icons.play_circle_outline,
-                        size: 13,
-                        color: item.isAudio
-                            ? AppColors.pink
-                            : AppColors.purple),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text(
-                          '${item.format} • ${item.quality} • ${item.size}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: AppColors.textSecondary, fontSize: 12)),
-                    ),
-                  ],
-                ),
-              ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(item.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 14)),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                          item.isAudio
+                              ? Icons.music_note
+                              : Icons.play_circle_outline,
+                          size: 13,
+                          color:
+                              item.isAudio ? AppColors.pink : AppColors.purple),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                            '${item.formatLabel} • ${item.sizeLabel}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: AppColors.textSecondary, fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Text(item.timeAgo,
-              style: const TextStyle(
-                  color: AppColors.textSecondary, fontSize: 11)),
-          const SizedBox(width: 8),
-          const Icon(Icons.check_circle, color: AppColors.green, size: 20),
-          IconButton(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            icon: const Icon(Icons.more_vert,
-                color: AppColors.textMuted, size: 20),
-            onPressed: () {},
-          ),
-        ],
+            const SizedBox(width: 8),
+            Text(item.timeAgo,
+                style: const TextStyle(
+                    color: AppColors.textSecondary, fontSize: 11)),
+            const SizedBox(width: 8),
+            const Icon(Icons.check_circle, color: AppColors.green, size: 20),
+          ],
+        ),
       ),
     );
   }
