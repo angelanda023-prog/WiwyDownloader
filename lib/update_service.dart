@@ -47,6 +47,10 @@ class UpdateService {
 
   /// Consulta el manifiesto remoto.
   /// Devuelve [UpdateInfo] si hay una versión más nueva; `null` si estás al día.
+  ///
+  /// Compara por **versionName** (semver "1.0.1") y NO por versionCode, porque
+  /// `--split-per-abi` le suma 1000·índiceABI al versionCode (arm64 = +2000),
+  /// lo que rompería la comparación numérica.
   static Future<UpdateInfo?> checkForUpdate() async {
     final res = await http
         .get(Uri.parse(AppConfig.updateManifestUrl))
@@ -56,8 +60,27 @@ class UpdateService {
     }
     final info =
         UpdateInfo.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
-    final current = await currentVersionCode();
-    return info.versionCode > current ? info : null;
+    final current = await currentVersionName();
+    return _isNewer(info.versionName, current) ? info : null;
+  }
+
+  /// ¿[remote] es una versión semántica mayor que [local]? (p. ej. 1.0.1 > 1.0.0)
+  static bool _isNewer(String remote, String local) {
+    List<int> parse(String v) => v
+        .split('+')
+        .first
+        .split('.')
+        .map((p) => int.tryParse(p.trim()) ?? 0)
+        .toList();
+    final r = parse(remote);
+    final l = parse(local);
+    final len = r.length > l.length ? r.length : l.length;
+    for (var i = 0; i < len; i++) {
+      final rv = i < r.length ? r[i] : 0;
+      final lv = i < l.length ? l[i] : 0;
+      if (rv != lv) return rv > lv;
+    }
+    return false;
   }
 
   /// Descarga el APK (con progreso 0..1) y lanza el instalador del sistema.
