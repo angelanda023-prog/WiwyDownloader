@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:open_filex/open_filex.dart';
 
 import '../app_colors.dart';
 import '../downloads_store.dart';
@@ -15,6 +14,7 @@ class DownloadsListView extends StatelessWidget {
   final String emptyText;
   final Future<void> Function() onRefresh;
   final void Function(DownloadItem) onDelete;
+  final void Function(DownloadItem) onOpen;
 
   const DownloadsListView({
     super.key,
@@ -23,6 +23,7 @@ class DownloadsListView extends StatelessWidget {
     required this.emptyText,
     required this.onRefresh,
     required this.onDelete,
+    required this.onOpen,
   });
 
   List<DownloadItem> get _filtered {
@@ -68,7 +69,7 @@ class DownloadsListView extends StatelessWidget {
               separatorBuilder: (context, i) =>
                   const Divider(color: AppColors.border, height: 16),
               itemBuilder: (context, i) =>
-                  _DownloadTile(item: list[i], onDelete: onDelete),
+                  _DownloadTile(item: list[i], onDelete: onDelete, onOpen: onOpen),
             ),
     );
   }
@@ -77,16 +78,9 @@ class DownloadsListView extends StatelessWidget {
 class _DownloadTile extends StatelessWidget {
   final DownloadItem item;
   final void Function(DownloadItem) onDelete;
-  const _DownloadTile({required this.item, required this.onDelete});
-
-  Future<void> _open(BuildContext context) async {
-    final res = await OpenFilex.open(item.file.path);
-    if (res.type != ResultType.done && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo abrir: ${res.message}')),
-      );
-    }
-  }
+  final void Function(DownloadItem) onOpen;
+  const _DownloadTile(
+      {required this.item, required this.onDelete, required this.onOpen});
 
   void _confirmDelete(BuildContext context) {
     showDialog<void>(
@@ -116,7 +110,7 @@ class _DownloadTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: () => _open(context),
+      onTap: () => onOpen(item),
       borderRadius: BorderRadius.circular(12),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:open_filex/open_filex.dart';
 
 import 'app_colors.dart';
 import 'downloads_store.dart';
@@ -51,9 +50,10 @@ class _MainScaffoldState extends State<MainScaffold> {
   }
 
   Future<void> _openFile(DownloadItem item) async {
-    final res = await OpenFilex.open(item.file.path);
-    if (res.type != ResultType.done && mounted) {
-      _snack('No se pudo abrir el archivo: ${res.message}');
+    try {
+      await DownloadsStore.open(item);
+    } catch (e) {
+      if (mounted) _snack('No se pudo abrir el archivo: $e');
     }
   }
 
@@ -486,6 +486,7 @@ class _MainScaffoldState extends State<MainScaffold> {
             emptyText: emptyText,
             onRefresh: _loadDownloads,
             onDelete: _deleteDownload,
+            onOpen: _openFile,
           ),
         ),
       ],

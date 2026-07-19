@@ -1,10 +1,15 @@
 package com.wiwy.wiwy_downloader
 
+import android.content.ContentUris
+import android.content.ContentValues
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
 import androidx.annotation.NonNull
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
-import com.yausername.youtubedl_android.YoutubeDLException
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -14,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
@@ -23,6 +29,10 @@ class MainActivity : FlutterActivity() {
     private val eventChannel = "wiwy/ytdlp/progress"
     private var progressSink: EventChannel.EventSink? = null
     private val scope = CoroutineScope(Dispatchers.IO)
+
+    // Carpeta pública destino: Descargas/WiwyDownloader
+    private val publicSubDir = "WiwyDownloader"
+    private val relativePath = "${Environment.DIRECTORY_DOWNLOADS}/WiwyDownloader"
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -49,6 +59,9 @@ class MainActivity : FlutterActivity() {
                         call.argument<String>("quality") ?: "best",
                         result
                     )
+                    "listDownloads" -> listDownloads(result)
+                    "openDownload" -> openDownload(call.argument<String>("id"), result)
+                    "deleteDownload" -> deleteDownload(call.argument<String>("id"), result)
                     else -> result.notImplemented()
                 }
             }
@@ -113,7 +126,10 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    /** Descarga a la carpeta pública de Descargas. mode = "audio" | "video". */
+    /**
+     * Descarga a una carpeta temporal y luego exporta a Descargas/WiwyDownloader
+     * (pública, sobrevive a la desinstalación). mode = "audio" | "video".
+     */
     private fun download(
         url: String?,
         mode: String,
@@ -125,28 +141,25 @@ class MainActivity : FlutterActivity() {
         }
         scope.launch {
             try {
-                // Carpeta propia de la app: no requiere permisos y funciona en todas
-                // las versiones de Android. Ruta visible: Android/data/<app>/files/Download
-                val downloadDir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-                    ?: File(filesDir, "Download")
-                if (!downloadDir.exists()) downloadDir.mkdirs()
+                // Carpeta temporal privada (rápida y sin permisos) para trabajar.
+                val staging = File(cacheDir, "staging")
+                if (staging.exists()) staging.deleteRecursively()
+                staging.mkdirs()
 
                 val request = YoutubeDLRequest(url).apply {
-                    addOption("-o", File(downloadDir, "%(title)s.%(ext)s").absolutePath)
+                    addOption("-o", File(staging, "%(title)s.%(ext)s").absolutePath)
                     addOption("--no-mtime")
                     if (mode == "audio") {
-                        addOption("-x")                 // extraer solo audio
+                        addOption("-x")
                         addOption("--audio-format", "mp3")
-                        // quality: "320" | "192" | "128" | "best"
                         val aq = when (quality) {
                             "320" -> "320K"
                             "192" -> "192K"
                             "128" -> "128K"
-                            else -> "0"                 // mejor calidad disponible
+                            else -> "0"
                         }
                         addOption("--audio-quality", aq)
                     } else {
-                        // quality: "2160" | "1080" | "720" | "480" | "360" | "best"
                         val fmt = if (quality == "best") {
                             "bestvideo+bestaudio/best"
                         } else {
@@ -167,12 +180,179 @@ class MainActivity : FlutterActivity() {
                         progressSink?.success(payload.toString())
                     }
                 }
+
+                // Exportar los archivos producidos a Descargas/WiwyDownloader.
+                val produced = staging.listFiles()?.filter { it.isFile } ?: emptyList()
+                for (f in produced) {
+                    exportToPublicDownloads(f)
+                }
+                staging.deleteRecursively()
+
                 withContext(Dispatchers.Main) {
-                    result.success(downloadDir.absolutePath)
+                    result.success("Descargas/$publicSubDir")
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     result.error("DOWNLOAD_FAILED", e.message, null)
+                }
+            }
+        }
+    }
+
+    private fun mimeFor(name: String): String {
+        val n = name.lowercase()
+        return when {
+            n.endsWith(".mp3") -> "audio/mpeg"
+            n.endsWith(".m4a") -> "audio/mp4"
+            n.endsWith(".aac") -> "audio/aac"
+            n.endsWith(".ogg") || n.endsWith(".opus") -> "audio/ogg"
+            n.endsWith(".wav") -> "audio/wav"
+            n.endsWith(".flac") -> "audio/flac"
+            n.endsWith(".mp4") -> "video/mp4"
+            n.endsWith(".webm") -> "video/webm"
+            n.endsWith(".mkv") -> "video/x-matroska"
+            n.endsWith(".3gp") -> "video/3gpp"
+            else -> "application/octet-stream"
+        }
+    }
+
+    /** Copia [src] a la carpeta pública Descargas/WiwyDownloader. */
+    private fun exportToPublicDownloads(src: File) {
+        val mime = mimeFor(src.name)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, src.name)
+                put(MediaStore.Downloads.MIME_TYPE, mime)
+                put(MediaStore.Downloads.RELATIVE_PATH, relativePath)
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val resolver = contentResolver
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: return
+            resolver.openOutputStream(uri)?.use { out ->
+                src.inputStream().use { it.copyTo(out) }
+            }
+            values.clear()
+            values.put(MediaStore.Downloads.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+        } else {
+            val dir = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                publicSubDir
+            )
+            if (!dir.exists()) dir.mkdirs()
+            src.copyTo(File(dir, src.name), overwrite = true)
+        }
+    }
+
+    /** Lista los archivos de Descargas/WiwyDownloader como JSON. */
+    private fun listDownloads(result: MethodChannel.Result) {
+        scope.launch {
+            try {
+                val arr = JSONArray()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val projection = arrayOf(
+                        MediaStore.Downloads._ID,
+                        MediaStore.Downloads.DISPLAY_NAME,
+                        MediaStore.Downloads.SIZE,
+                        MediaStore.Downloads.DATE_MODIFIED
+                    )
+                    val selection = "${MediaStore.Downloads.RELATIVE_PATH} LIKE ?"
+                    val args = arrayOf("%$publicSubDir%")
+                    val sort = "${MediaStore.Downloads.DATE_MODIFIED} DESC"
+                    contentResolver.query(
+                        MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                        projection, selection, args, sort
+                    )?.use { c ->
+                        val idCol = c.getColumnIndexOrThrow(MediaStore.Downloads._ID)
+                        val nameCol = c.getColumnIndexOrThrow(MediaStore.Downloads.DISPLAY_NAME)
+                        val sizeCol = c.getColumnIndexOrThrow(MediaStore.Downloads.SIZE)
+                        val dateCol = c.getColumnIndexOrThrow(MediaStore.Downloads.DATE_MODIFIED)
+                        while (c.moveToNext()) {
+                            arr.put(JSONObject().apply {
+                                put("id", c.getLong(idCol).toString())
+                                put("name", c.getString(nameCol) ?: "")
+                                put("size", c.getLong(sizeCol))
+                                put("modified", c.getLong(dateCol) * 1000L) // a milisegundos
+                            })
+                        }
+                    }
+                } else {
+                    val dir = File(
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                        publicSubDir
+                    )
+                    dir.listFiles()?.filter { it.isFile }
+                        ?.sortedByDescending { it.lastModified() }
+                        ?.forEach { f ->
+                            arr.put(JSONObject().apply {
+                                put("id", f.absolutePath)
+                                put("name", f.name)
+                                put("size", f.length())
+                                put("modified", f.lastModified())
+                            })
+                        }
+                }
+                withContext(Dispatchers.Main) { result.success(arr.toString()) }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.error("LIST_FAILED", e.message, null)
+                }
+            }
+        }
+    }
+
+    /** Abre un archivo (id = MediaStore _ID en API 29+, o ruta absoluta en API < 29). */
+    private fun openDownload(id: String?, result: MethodChannel.Result) {
+        if (id.isNullOrBlank()) {
+            result.error("NO_ID", "id vacío", null); return
+        }
+        try {
+            val uri: Uri
+            val mime: String
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                uri = ContentUris.withAppendedId(
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI, id.toLong()
+                )
+                mime = contentResolver.getType(uri) ?: "*/*"
+            } else {
+                val file = File(id)
+                uri = androidx.core.content.FileProvider.getUriForFile(
+                    this, "$packageName.fileprovider", file
+                )
+                mime = mimeFor(file.name)
+            }
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mime)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            result.success(true)
+        } catch (e: Exception) {
+            result.error("OPEN_FAILED", e.message, null)
+        }
+    }
+
+    /** Borra un archivo por id (MediaStore) o ruta. */
+    private fun deleteDownload(id: String?, result: MethodChannel.Result) {
+        if (id.isNullOrBlank()) {
+            result.error("NO_ID", "id vacío", null); return
+        }
+        scope.launch {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val uri = ContentUris.withAppendedId(
+                        MediaStore.Downloads.EXTERNAL_CONTENT_URI, id.toLong()
+                    )
+                    contentResolver.delete(uri, null, null)
+                } else {
+                    File(id).delete()
+                }
+                withContext(Dispatchers.Main) { result.success(true) }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.error("DELETE_FAILED", e.message, null)
                 }
             }
         }

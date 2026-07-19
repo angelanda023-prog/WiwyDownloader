@@ -1,19 +1,28 @@
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
+import 'dart:convert';
+import 'package:flutter/services.dart';
 
-/// Un archivo descargado en el disco.
+/// Un archivo descargado en Descargas/WiwyDownloader (carpeta pública).
 class DownloadItem {
-  final File file;
+  /// Identificador para abrir/borrar: MediaStore _ID (Android 10+) o ruta.
+  final String id;
   final String name;
   final int sizeBytes;
   final DateTime modified;
 
   DownloadItem({
-    required this.file,
+    required this.id,
     required this.name,
     required this.sizeBytes,
     required this.modified,
   });
+
+  factory DownloadItem.fromJson(Map<String, dynamic> j) => DownloadItem(
+        id: j['id']?.toString() ?? '',
+        name: j['name']?.toString() ?? '',
+        sizeBytes: (j['size'] as num?)?.toInt() ?? 0,
+        modified: DateTime.fromMillisecondsSinceEpoch(
+            (j['modified'] as num?)?.toInt() ?? 0),
+      );
 
   static const _audioExt = {'mp3', 'm4a', 'aac', 'ogg', 'opus', 'wav', 'flac'};
 
@@ -48,50 +57,31 @@ class DownloadItem {
     return 'Hace ${d.inDays} ${d.inDays == 1 ? "día" : "días"}';
   }
 
-  /// Nombre sin la extensión, para mostrar como título.
   String get title {
     final i = name.lastIndexOf('.');
     return i == -1 ? name : name.substring(0, i);
   }
 }
 
-/// Lee y gestiona los archivos de la carpeta de descargas de la app.
+/// Lee y gestiona los archivos de Descargas/WiwyDownloader vía el canal nativo.
 class DownloadsStore {
-  /// Misma carpeta donde escribe el motor nativo:
-  /// `/sdcard/Android/data/<pkg>/files/Download`
-  static Future<Directory> downloadsDir() async {
-    final base = await getExternalStorageDirectory();
-    final dir = Directory('${base!.path}/Download');
-    if (!await dir.exists()) await dir.create(recursive: true);
-    return dir;
+  static const _channel = MethodChannel('wiwy/ytdlp');
+
+  static Future<List<DownloadItem>> list() async {
+    final res = await _channel.invokeMethod<String>('listDownloads');
+    if (res == null || res.isEmpty) return [];
+    final data = jsonDecode(res) as List<dynamic>;
+    return data
+        .map((e) => DownloadItem.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
-  /// Lista los archivos descargados, del más reciente al más antiguo.
-  /// Ignora archivos temporales (.part, .ytdl).
-  static Future<List<DownloadItem>> list() async {
-    final dir = await downloadsDir();
-    final items = <DownloadItem>[];
-    for (final entity in dir.listSync()) {
-      if (entity is! File) continue;
-      final name = entity.uri.pathSegments.last;
-      if (name.endsWith('.part') ||
-          name.endsWith('.ytdl') ||
-          name.startsWith('.')) {
-        continue;
-      }
-      final stat = entity.statSync();
-      items.add(DownloadItem(
-        file: entity,
-        name: name,
-        sizeBytes: stat.size,
-        modified: stat.modified,
-      ));
-    }
-    items.sort((a, b) => b.modified.compareTo(a.modified));
-    return items;
+  /// Abre el archivo con la app del sistema.
+  static Future<void> open(DownloadItem item) async {
+    await _channel.invokeMethod('openDownload', {'id': item.id});
   }
 
   static Future<void> delete(DownloadItem item) async {
-    if (await item.file.exists()) await item.file.delete();
+    await _channel.invokeMethod('deleteDownload', {'id': item.id});
   }
 }
